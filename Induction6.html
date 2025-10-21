@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Induction — eau + chaleur</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#111824; --ink:#e9f1fb; --muted:#9ab0c9;
+    --accent:#59a6ff; --heat:#ff7a59; --copper:#c86b2a; --steel:#b9c3cc; --glass:#0d121a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:linear-gradient(180deg,#0b0f14,#0a0f16 40%,#0b1018);
+    color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  .app{width:100vw;height:100dvh;padding:clamp(8px,2.5vw,14px);display:flex}
+  .card{
+    flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,#0e1520,#0c131d);
+    border:1px solid #142033;border-radius:18px;
+    box-shadow:0 10px 24px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+    overflow:hidden;
+  }
+
+  header{
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+    gap:clamp(6px,1.6vw,10px);
+    padding:clamp(10px,2.8vw,14px) clamp(12px,3vw,18px);
+    border-bottom:1px solid #152238;
+  }
+  header h1{margin:0;font-weight:700;font-size:clamp(14px,3.5vw,18px);line-height:1.2}
+  header .sub{color:var(--muted);font-size:clamp(11px,2.8vw,13px);margin-top:2px}
+
+  .controls{display:flex;align-items:center;gap:clamp(6px,1.8vw,10px);flex-wrap:wrap}
+  .btn{
+    background:#142238;border:1px solid #1b2f4a;color:var(--ink);
+    padding:clamp(8px,1.8vw,10px) clamp(12px,2.5vw,14px);
+    border-radius:12px;cursor:pointer;font-size:clamp(13px,3.5vw,15px)
+  }
+  .btn.toggled{outline:2px solid var(--accent)}
+  .slider-wrap{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:clamp(12px,3vw,14px)}
+  .slider-wrap input[type="range"]{width:clamp(140px,32vw,220px);accent-color:var(--accent)}
+  .big{font-size:clamp(14px,4vw,18px);color:#f7fbff}
+
+  .stage{
+    position:relative;flex:1 1 auto;min-height:0;
+    display:flex;align-items:center;justify-content:center;
+    transform:translateY(-4vh); /* remonte un peu le schéma */
+  }
+  #scene{
+    width:100%;height:108%;display:block;
+    background:linear-gradient(180deg,#0a0f16,#0a0f16 70%,#0c1119);
+  }
+
+  /* Thermomètre */
+  .thermo{
+    position:absolute; right:10px; top:50%; transform:translateY(-52%);
+    width:42px; height:min(62vh,520px);
+    display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none;
+  }
+  .t-label{font-size:clamp(11px,3.2vw,13px); color:#dbe7f7}
+  .tube{
+    position:relative; flex:1 1 auto; width:14px; border-radius:10px;
+    background:linear-gradient(180deg,#0f1a27,#0c1521);
+    border:1px solid #1b2f4a; box-shadow:inset 0 0 0 2px rgba(255,255,255,.03);
+    overflow:hidden;
+  }
+  .fill{
+    position:absolute; left:0; right:0; bottom:0;
+    height:0%; border-radius:10px 10px 2px 2px;
+    background:#3aa0ff; transition:height .2s linear, background .2s linear;
+  }
+  .ticks{
+    position:absolute; left:16px; top:0; bottom:0; width:20px;
+    background:repeating-linear-gradient(to bottom, transparent 0 22px, transparent 21px, rgba(255,255,255,.08) 21px 22px);
+    pointer-events:none;
+  }
+  .t-min,.t-max{font-size:clamp(10px,3vw,12px); color:#9ab0c9; position:absolute; left:18px;}
+  .t-min{ bottom:-4px; } .t-max{ top:-4px; }
+  @media (max-width:480px){ .thermo{ right:6px; } }
+</style>
+</head>
+<body>
+  <main class="app">
+    <div class="card">
+      <header>
+        <div>
+          <h1>Plaque à induction — eau & chaleur</h1>
+          <div class="sub">Champ magnétique → Courants de Foucault → Chaleur (effet Joule)</div>
+        </div>
+        <div class="controls">
+          <button id="playBtn" class="btn">Pause</button>
+          <button id="labelsBtn" class="btn toggled">Texte</button>
+          <div class="slider-wrap">
+            Vitesse <input id="speed" type="range" min="0.5" max="2.5" value="1" step="0.1">
+          </div>
+          <div class="slider-wrap">
+            Puissance <input id="power" type="range" min="200" max="2000" value="1400" step="50">
+            <span id="powerVal" class="big">1400 W</span>
+          </div>
+          <button id="resetT" class="btn">Reset Temp</button>
+        </div>
+      </header>
+
+      <div class="stage">
+        <canvas id="scene"></canvas>
+
+        <!-- Thermomètre -->
+        <div class="thermo" aria-label="Thermomètre">
+          <div class="t-label" id="tNow">22 °C</div>
+          <div class="tube">
+            <div class="fill" id="tFill"></div>
+            <div class="ticks"></div>
+            <div class="t-max">280°</div>
+            <div class="t-min">20°</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+(() => {
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d', { alpha:false });
+
+  // UI
+  const playBtn = document.getElementById('playBtn');
+  const labelsBtn = document.getElementById('labelsBtn');
+  const speedEl = document.getElementById('speed');
+  const powerEl = document.getElementById('power');
+  const powerVal = document.getElementById('powerVal');
+  const resetBtn = document.getElementById('resetT');
+
+  // Thermo
+  const tNow  = document.getElementById('tNow');
+  const tFill = document.getElementById('tFill');
+
+  let showLabels = true, playing = true, speedFactor = 1;
+
+  // Modèle thermique (pédagogique)
+  const T_MIN = 20, T_MAX = 250;
+  const T_amb = 22; let T = 22;
+  let P_in = 1400; const m = 1.2, c = 4180, kLoss = 14; // eau majoritaire (~1 L), pertes ↑
+  // (m,c) choisis pour que la montée soit réaliste et pas trop rapide
+
+  function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+  function LERP(a,b,t){ return a + (b-a)*t; }
+
+  function updateThermo(){
+    const ratio = clamp((T - T_MIN)/(T_MAX - T_MIN), 0, 1);
+    tFill.style.height = `${ratio*100}%`;
+    const hue = 210 - (210-15)*ratio; // bleu→rouge
+    tFill.style.background = `hsl(${hue} 80% 55%)`;
+    tNow.textContent = `${T.toFixed(0)} °C`;
+    powerVal.textContent = `${P_in} W`;
+  }
+  updateThermo();
+
+  powerEl.addEventListener('input', e => { P_in = +e.target.value; updateThermo(); });
+  resetBtn.addEventListener('click', () => { T = T_amb; updateThermo(); });
+
+  // Canvas responsive
+  function resize(){
+    canvas.width  = Math.floor(canvas.clientWidth  * devicePixelRatio);
+    canvas.height = Math.floor(canvas.clientHeight * devicePixelRatio);
+    ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  }
+  addEventListener('resize', resize, { passive:true });
+  resize();
+
+  // Couleurs
+  const COL={ bg:'#0a0f16', glass:'#0d121a', copper:'#c86b2a', steel:'#b9c3cc',
+              accent:'#59a6ff', heat:'#ff7a59', heat2:'#ffb07a', ink:'#e9f1fb' };
+
+  // Géométrie
+  const G = () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const plateY = h*0.58, coilR = Math.min(w*0.34, 190);
+    const potR  = coilR*0.98, coilY = plateY+26, potY = plateY-52;
+    return {w,h,plateY,coilR,coilY,potR,potY};
+  };
+
+  // Particules
+  const eCoil=[], ePot=[], steam=[];
+  function initParticles(){
+    eCoil.length=0; ePot.length=0; steam.length=0;
+    const {coilR} = G();
+    for(let i=0;i<90;i++)
+      eCoil.push({a:Math.random()*6.283, r: coilR*(0.30+Math.random()*0.60), s:1+Math.random()*0.7});
+    for(let i=0;i<70;i++)
+      ePot.push({a:Math.random()*6.283, r:(0.1+Math.random()*0.9), s:0.8+Math.random()*0.9});
+    // vapeur initiale
+    for(let i=0;i<40;i++) steam.push(newSteam());
+  }
+  function newSteam(){
+    const {w, potY, potR} = G();
+    const cx = w/2;
+    return {
+      x: cx + (Math.random()*2-1)*potR*0.7,
+      y: potY - 70 + Math.random()*20,
+      v: 18 + Math.random()*22, // vitesse montée
+      a: Math.random()*6.283,   // phase ondulation
+      life: 2 + Math.random()*2 // secondes
+    };
+  }
+  initParticles();
+
+  // Boucle anim
+  let tPrev = performance.now();
+  function loop(tNow){
+    if(!playing){ requestAnimationFrame(loop); return; }
+    const dt = Math.min(40, tNow - tPrev) * 0.001 * speedFactor;
+    tPrev = tNow;
+
+    // thermique simple eau (P_in alimente, pertes kLoss)
+    const dT = (P_in - kLoss*(T - T_amb)) / (m*c) * dt;
+    T = clamp(T + dT, T_amb, T_MAX);
+    updateThermo();
+
+    draw(dt);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  function draw(dt){
+    const {w,h,plateY,coilR,coilY,potR,potY} = G();
+    const cx = w/2;
+
+    // fond
+    const bg = ctx.createRadialGradient(cx,h*.2,w*.1, cx,h*.5,w*.9);
+    bg.addColorStop(0,'#0b121b'); bg.addColorStop(1,COL.bg);
+    ctx.fillStyle=bg; ctx.fillRect(0,0,w,h);
+
+    // plaque
+    rr(12, plateY-12, w-24, 22, 12);
+    const gl = ctx.createLinearGradient(0, plateY-12, 0, plateY+10);
+    gl.addColorStop(0,'#0b1016'); gl.addColorStop(1,COL.glass);
+    ctx.fillStyle=gl; ctx.fill();
+
+    // bobine
+    for(let k=0;k<6;k++){
+      const R = coilR*(0.22 + 0.12*k);
+      ctx.beginPath(); ctx.arc(cx,coilY,R,0,6.283);
+      ctx.strokeStyle = k%2 ? '#d27a3e' : COL.copper;
+      ctx.lineWidth=3.4; ctx.globalAlpha=.92; ctx.stroke(); ctx.globalAlpha=1;
+    }
+
+    // champ magnétique
+    const pulse = (Math.sin(performance.now()*0.005*speedFactor)*0.5+0.5);
+    for(let i=0;i<11;i++){
+      const frac=i/10, x=cx+(frac-.5)*coilR*1.55;
+      ctx.beginPath(); ctx.moveTo(x, coilY-10);
+      ctx.bezierCurveTo(x, coilY-70, x, potY-30, x, potY-6);
+      ctx.lineWidth = 1.2 + 2.0*Math.sin((i*0.7 + pulse*3));
+      ctx.strokeStyle = `rgba(89,166,255,${0.20 + 0.20*Math.sin(i+performance.now()*0.004)})`;
+      ctx.stroke();
+    }
+
+    // casserole
+    const potW=potR*2.2, potH=120, potX=cx-potW/2, potTop=potY-potH;
+    rr(potX,potTop,potW,potH,20);
+    const st = ctx.createLinearGradient(potX,potTop,potX+potW,potTop);
+    st.addColorStop(0,'#a8b4be'); st.addColorStop(0.5,'#d9e0e6'); st.addColorStop(1,'#9faab4');
+    ctx.fillStyle=st; ctx.fill();
+    ctx.fillStyle='#e6edf3'; ctx.fillRect(potX,potTop-6,potW,6);
+    ctx.fillStyle='#8b96a1'; ctx.fillRect(potX+potW-30,potTop+24,28,12);
+
+    // fond ferromagnétique
+    ctx.beginPath(); ctx.ellipse(cx,potY-6,potR*0.96,11,0,0,6.283);
+    const base = ctx.createLinearGradient(cx-potR,potY-12, cx+potR,potY+4);
+    base.addColorStop(0,'#b7c2cb'); base.addColorStop(0.5,'#edf3f9'); base.addColorStop(1,'#b1bbc4');
+    ctx.fillStyle=base; ctx.fill();
+
+    // *** EAU DANS LA CASSEROLE ***
+    const waterLevel = LERP(potTop+potH*0.62, potTop+potH*0.48, clamp((T-22)/80,0,1)); // monte un peu avec T
+    const waveA = 6 + 4*Math.sin(performance.now()*0.003); // amplitude
+    drawWater(potX+10, waterLevel, potW-20, potY-18 - waterLevel, waveA);
+
+    // chaleur (rouge/orange en-dessous)
+    const alpha = Math.min(0.7, (T-22)/220*0.7);
+    const hg = ctx.createLinearGradient(cx, potY-16, cx, potTop+12);
+    hg.addColorStop(0, `rgba(255,122,89,${alpha})`);
+    hg.addColorStop(1, 'rgba(255,122,89,0)');
+    ctx.fillStyle=hg; ctx.fillRect(potX+10, potTop+12, potW-20, (potY-16)-(potTop+12));
+
+    // électrons bobine
+    eCoil.forEach(p=>{
+      p.a += dt*3.3*p.s;
+      const r=p.r + 2*Math.sin(p.a*0.7);
+      const x=cx+Math.cos(p.a)*r, y=coilY + Math.sin(p.a)*r*0.22;
+      ctx.beginPath(); ctx.arc(x,y,2,0,6.283);
+      ctx.fillStyle='rgba(89,166,255,0.95)'; ctx.fill();
+    });
+
+    // courants de Foucault
+    for(let L=0;L<5;L++){
+      const rrR=potR*0.2 + L*(potR*0.16);
+      ctx.beginPath(); ctx.ellipse(cx,potY-6,rrR,9,0,0,6.283);
+      ctx.strokeStyle='rgba(255,122,89,0.25)'; ctx.lineWidth=2; ctx.stroke();
+    }
+    ePot.forEach(p=>{
+      p.a -= dt*2.5*p.s;
+      const R=potR*0.15 + p.r*potR*0.75;
+      const x=cx+Math.cos(p.a)*R, y=potY-6 + Math.sin(p.a)*7;
+      ctx.beginPath(); ctx.arc(x,y,2,0,6.283);
+      ctx.fillStyle='rgba(255,140,100,0.95)'; ctx.fill();
+    });
+
+    // ** VAPEUR + MIRAGE AU-DESSUS DE L'EAU **
+    drawHeatShimmer(potX+16, waterLevel-8, potW-32, 40, dt); // distorsion optique
+    drawSteam(potX+16, waterLevel-8, potW-32, 60, dt);      // particules vapeur
+
+    // légendes (texte plus petit dans la casserole)
+    if(showLabels){
+      labelSmall('Chaleur par effet Joule', cx, waterLevel-50, '#ffbda3'); // plus petit et à l'intérieur
+      label('Champ magnétique (AC ~20–50 kHz)', cx, coilY-250, '#9fd0ff');
+      label('Courants de Foucault (électrons induits)', cx, potY-158, '#ffd1a6');
+    }
+  }
+
+  // EAU : volume + vaguelettes
+  function drawWater(x, yTop, w, h, A){
+    const t = performance.now()*0.0025;
+    // forme du volume
+    const g1 = ctx.createLinearGradient(x, yTop, x, yTop+h);
+    g1.addColorStop(0, 'rgba(90,150,255,0.35)');
+    g1.addColorStop(1, 'rgba(60,120,220,0.22)');
+    ctx.fillStyle = g1;
+    rr(x, yTop, w, h, 8); ctx.fill();
+
+    // surface ondulée
+    ctx.beginPath();
+    const steps = 26;
+    for(let i=0;i<=steps;i++){
+      const u = i/steps;
+      const xx = x + u*w;
+      const yy = yTop + Math.sin(u*6.283*2 + t*2)*A*0.5 + Math.sin(u*6.283*1.3 + t*1.4)*A*0.3;
+      (i===0) ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy);
+    }
+    ctx.strokeStyle = 'rgba(180,210,255,0.65)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // MIRAGE : bandes translucides qui ondulent
+  let shimmerPhase = 0;
+  function drawHeatShimmer(x, y, w, h, dt){
+    shimmerPhase += dt*2.2;
+    for(let i=0;i<5;i++){
+      const yy = y + i*(h/5) + Math.sin(shimmerPhase + i*0.8)*3;
+      ctx.globalAlpha = 0.08 + 0.04*Math.sin(shimmerPhase*1.5 + i);
+      ctx.fillStyle = 'rgba(255,200,150,1)';
+      ctx.fillRect(x, yy, w, 3);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // VAPEUR : petites bulles floues qui montent
+  function drawSteam(x, y, w, h, dt){
+    const {w:W} = G();
+    for(let s=steam.length-1; s>=0; s--){
+      const p = steam[s];
+      p.life -= dt;
+      p.y -= p.v*dt;
+      p.x += Math.sin(p.a += dt*2.5) * 12 * dt; // ondulation horizontale
+      if(p.life <= 0 || p.y < y - h){
+        steam[s] = newSteam();
+        continue;
+      }
+      const alpha = Math.max(0, Math.min(0.25, p.life*0.15));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, 6.283);
+      ctx.fillStyle = `rgba(220,230,240,${alpha})`;
+      ctx.fill();
+    }
+    // ajoute quelques particules si T très chaud
+    if (T > 85 && steam.length < 80){
+      steam.push(newSteam());
+    }
+  }
+
+  function rr(x,y,w,h,r){
+    const R=Math.min(r,w/2,h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+R,y); ctx.arcTo(x+w,y,x+w,y+h,R);
+    ctx.arcTo(x+w,y+h,x,y+h,R); ctx.arcTo(x,y+h,x,y,R);
+    ctx.arcTo(x,y,x+w,y,R); ctx.closePath();
+  }
+  function label(text,x,y,color){
+    ctx.save();
+    ctx.font='600 clamp(11px,3.2vw,13px) system-ui,-apple-system,Segoe UI,Roboto,Inter';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.strokeStyle='rgba(10,16,24,0.9)'; ctx.lineWidth=6; ctx.strokeText(text,x,y);
+    ctx.fillStyle=color; ctx.fillText(text,x,y);
+    ctx.restore();
+  }
+  function labelSmall(text,x,y,color){
+    ctx.save();
+    ctx.font='600 clamp(10px,2.8vw,12px) system-ui,-apple-system,Segoe UI,Roboto,Inter'; /* ← plus petit */
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.strokeStyle='rgba(10,16,24,0.7)'; ctx.lineWidth=4; ctx.strokeText(text,x,y);
+    ctx.fillStyle=color; ctx.fillText(text,x,y);
+    ctx.restore();
+  }
+
+  // UI
+  playBtn.onclick = () => {
+    playing = !playing;
+    playBtn.textContent = playing ? 'Pause' : 'Lecture';
+    if(playing){ tPrev = performance.now(); requestAnimationFrame(loop); }
+  };
+  labelsBtn.onclick = () => { showLabels = !showLabels; labelsBtn.classList.toggle('toggled', showLabels); };
+  speedEl.oninput = e => { speedFactor = +e.target.value; };
+  powerEl.oninput = e => { P_in = +e.target.value; updateThermo(); };
+  canvas.addEventListener('click', ()=>initParticles(), {passive:true});
+})();
+</script>
+</body>
+</html>
